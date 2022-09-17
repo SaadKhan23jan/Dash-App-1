@@ -1,69 +1,166 @@
-from dash import Dash, dcc, html, Input, Output
-import dash_bootstrap_components as dcb
+from datetime import datetime as dt
+from dateutil.relativedelta import relativedelta
+from dash import Dash, html, dcc, Output, Input, State
+import dash_bootstrap_components as dbc
+import plotly.graph_objects as go
 import plotly.express as px
-import pandas as pd
+import yfinance as yf
+from crypto_list import crypto_list
+from functions import sarimax_pred
 
-df = pd.read_csv('https://raw.githubusercontent.com/plotly/datasets/master/gapminderDataFiveYear.csv')
-#external_stylesheets = [ 'https://codepen.io/chriddyp/pen/bWLwgP.css', { 'href': 'https://stackpath.bootstrapcdn.com/bootstrap/4.1.3/css/bootstrap.min.css', 'rel': 'stylesheet', 'integrity': 'sha384-MCw98/SFnGE8fJT3GXwEOngsV7Zt27NXFoaoApmYm81iuXoPkFOJwJ8ERdknLPMO', 'crossorigin': 'anonymous' } ]
-external_stylesheets = [dcb.themes.BOOTSTRAP]
 
-app = Dash(__name__,external_stylesheets=external_stylesheets)
 
+css_sheet = [dbc.themes.SPACELAB]
+BS = "https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css"
+app = Dash(__name__, external_stylesheets=css_sheet)
 server = app.server
 
 app.layout = html.Div([
-    html.H1("Scatter Graph", style={'textAlign':'center', 'backgroundColor':'#A65387', 'width':'50%'}),
-    dcc.Graph(id='scatter-graph-with-slider'),
-    html.Br(),
-    dcc.Graph(id='pie-graph-with-slider'),
-    html.Br(),
-    html.Label("Select x and y axis values"),
-    html.Br(),
-    html.Div([
-        dcc.Dropdown(id='xaxis', options=[col for col in df.columns], style={'width':'50%'}, value='gdpPercap'),
-        dcc.Dropdown(id='yaxis', options=[col for col in df.columns], style={'width':'50%'}, value='lifeExp')
-    ], style={'display':'flex'}),
-    html.Br(),
-    dcc.Slider(id='year-slider',
-               min=df['year'].min(),
-               max=df['year'].max(),
-               step=None,
-               value=df['year'].min(),
-               marks={str(year): str(year) for year in df['year'].unique()}
-
+    dbc.Button('Contact Me: LinkedIn', href='https://www.linkedin.com/in/saad-khan-167704163/', target='_blank',
+               style={'position':'center'}),
+    dbc.Button('Click Here for Stock Markets', href='http://127.0.0.1:8050/stock_markets.py', target='_blank', disabled=True),
+    html.Div(
+        html.H1("Welcome to Live Crypto data", style={'textAlign':'center', 'backgroundColor':'Lightgreen'})
     ),
-    dcc.RadioItems(options=[{'label': 'Linear', 'value': 'linear'},
-                            {'label': 'Log', 'value': 'log'}],
-                   value='linear',
-                   id='xaxis-type',
-                   inline=True),
-    dcc.RadioItems(options=[{'label': 'Linear', 'value': 'linear'},
-                            {'label': 'Log', 'value': 'log'}],
-                   value='linear',
-                   id='yaxis-type',
-                   inline=True)
-])
 
-@app.callback([Output('scatter-graph-with-slider', 'figure'),
-               Output('pie-graph-with-slider', 'figure')],
-              [Input('xaxis', 'value'),
-               Input('yaxis', 'value'),
-               Input('year-slider', 'value'),
-               Input('xaxis-type', 'value'),
-               Input('yaxis-type', 'value')])
-def update_graph(xaxis, yaxis, year, xaxis_type, yaxis_type):
+    html.Div([
+        html.Label('Select Crypto-Pair'),
+        dcc.Dropdown(id='crypto-pair', options=crypto_list,
+                     style={'width':'50%'}, value='BTC-USD'),
+    ]),
 
-    dff = df[df['year'] == year]
-    fig1 = px.scatter(data_frame=dff, x=xaxis, y=yaxis, size='pop',
-                     color='continent', hover_name='country', size_max=55,
-                     height=600, title=f'{xaxis} vs {yaxis} for {year}')
-    fig1.update_layout({'plot_bgcolor': 'LightSteelBlue'})
-    fig1.update_xaxes(title=f'Scale: {xaxis_type}, Variable: {xaxis}', type=xaxis_type)
-    fig1.update_yaxes(title=f'Scale: {yaxis_type}, Variable: {yaxis}',type=yaxis_type)
+    html.Div([
+        html.Label('Select Time Frame'),
+        dcc.Dropdown(id='time-frame', options=[{'label':'10 Year', 'value':'10y'},
+                                               {'label':'1 Year', 'value':'1y'},
+                                               {'label':'6 Months', 'value':'6mo'},
+                                               {'label':'3 Months', 'value':'3mo'},
+                                               {'label':'1 Months', 'value':'1mo'},
+                                               {'label':'1 Week', 'value':'1wk'},
+                                               {'label':'1 Day', 'value':'24h'}],
+                     style={'width':'50%'}, value='1y'),
+    ]),
 
-    fig2 = px.pie(data_frame=dff, values=xaxis, names=yaxis, )
-    fig2.update_traces(textposition='inside')
-    return fig1, fig2
+    html.Div(
+        dcc.Graph(id='my-graph-candlestick')
+    ),
+
+    html.Div(
+        dcc.Graph(id='my-graph-line')
+    ),
+
+    html.Div([
+        html.H2("SARIMAX Models Predictions"),
+        html.Br(),
+
+        html.Label('Select one of SARIMAX Model:   '),
+        dcc.Dropdown(id='sarimax-model', options=[{'label':'MA', 'value':'MA'},
+                                                  {'label':'AR', 'value':'AR'},
+                                                  {'label':'ARMA','value':'ARMA'},
+                                                  {'label':'ARIMA', 'value':'ARIMA'},
+                                                  {'label':'SARIMAX', 'value':'SARIMAX'},
+                                                  ],
+                     style={'width':'50%', 'backgroundColor':'Lightscreen'},
+                     value='SARIMAX'
+                     ),
+
+
+        html.Div([
+            html.Label('Enter the order of P:   '),
+            dcc.Input(id='p-order', type='number', placeholder='Enter the order of P', value=0, inputMode='numeric', min=0),
+        ], style={'display':'inline'}
+        ),
+        html.Div([
+            html.Label('Enter the order of I:   '),
+            dcc.Input(id='i-order', type='number', placeholder='Enter the order of I', value=0, inputMode='numeric', min=0),
+        ], style={'display':'inline'}
+        ),
+        html.Div([
+            html.Label('Enter the order of Q:   '),
+            dcc.Input(id='q-order', type='number', placeholder='Enter the order of Q', value=0, inputMode='numeric', min=0),
+            html.Button(id='run-pred', n_clicks=0, children='Submit'),
+        ], style={'display':'inline'}
+        ),
+        #dash_table.DataTable(id='sarimax-results',columns =  [{"name": i, "id": i,} for i in (df.columns)],),
+        html.Div(id='sarimax-results'),
+
+    ]),
+
+
+
+    html.Br(),
+    html.Br(),
+    html.Br(),
+    html.H1(f'Predictions Through SARIMAX Models'),
+    dcc.Graph(id='fig-pred')
+
+
+
+
+
+], style={'background-color': 'Lightgreen'})
+
+@app.callback([Output('my-graph-candlestick', 'figure'),
+               Output('my-graph-line', 'figure'),
+               Output('sarimax-results', 'children'),
+               Output('fig-pred', 'figure')],
+              [Input('run-pred', 'n_clicks'),
+               State('crypto-pair', 'value'),
+               State('time-frame', 'value'),
+               State('p-order', 'value'),
+               State('i-order', 'value'),
+               State('q-order', 'value'),
+               State('sarimax-model', 'value')])
+def update_graph(n_clicks, crypto, time_frame, p, i, q, sarimax_model):
+    if time_frame in ['10y']:
+        interval = '1mo'
+        start = (dt.now()-relativedelta(years=10))
+    elif time_frame in ['1y']:
+        interval = '1wk'
+        start = (dt.now() - relativedelta(years=1))
+    elif time_frame in ['6mo']:
+        interval = '5d'
+        start = (dt.now() - relativedelta(months=6))
+    elif time_frame in ['3mo']:
+        interval = '1d'
+        start = (dt.now() - relativedelta(months=3))
+    elif time_frame in ['1mo']:
+        interval = '90m'
+        start = (dt.now() - relativedelta(months=1))
+    elif time_frame in ['1wk']:
+        interval = '30m'
+        start = (dt.now() - relativedelta(weeks=1))
+    elif time_frame in ['24h']:
+        interval = '1m'
+        start = (dt.now() - relativedelta(hours=23))
+    else:
+        interval = '1m'
+        start = dt.now() - relativedelta(days=1)
+
+    end = dt.now()
+
+
+
+    #df = yf.download(tickers=crypto, period=time_frame, interval=interval)
+    df = yf.download(tickers=crypto, start=start, end=end)
+
+    fig1 = go.Figure(data=[go.Candlestick(x=df.index,
+                                          open=df.Open,
+                                          high=df.High,
+                                          low=df.Low,
+                                          close=df.Close)])
+    fig1.update_layout(title=f'Candle Chart of {crypto}', xaxis_title='Time', yaxis_title=f'{crypto}')
+
+    fig2 = px.line(data_frame=df, x=df.index, y=df['Volume'], markers='o')
+    fig2.update_layout(title=f'History of Volume {crypto}', xaxis_title='Time', yaxis_title=f'Volume of {crypto}')
+
+    # Here we will call our function for SARIMAX Model
+    results, fig_pred = sarimax_pred(df, p, i, q, sarimax_model)
+
+    fig_pred.update_layout(title='Predictions')
+
+    return fig1, fig2, results, fig_pred
+
 
 
 if __name__ == '__main__':
